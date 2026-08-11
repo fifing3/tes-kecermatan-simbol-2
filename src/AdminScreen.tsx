@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Plus, PowerOff, Loader2, KeyRound, AlertCircle, LogOut, Trash2, ChevronLeft, ChevronRight, MonitorX } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 

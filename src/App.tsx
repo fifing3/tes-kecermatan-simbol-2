@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import Game from './Game';
 import LoginScreen from './LoginScreen';
 import AdminScreen from './AdminScreen';

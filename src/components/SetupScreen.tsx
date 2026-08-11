@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { TestConfig } from '../types';
 import { Check, Settings, Clock, PlayCircle, Info } from 'lucide-react';
 
