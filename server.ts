@@ -28,16 +28,19 @@ async function startServer() {
       code TEXT UNIQUE NOT NULL,
       is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      session_id TEXT DEFAULT NULL
+      session_id TEXT DEFAULT NULL,
+      expires_at DATETIME DEFAULT NULL
     )
   `);
 
   // Simple migration in case table already exists
   try {
     db.exec(`ALTER TABLE access_codes ADD COLUMN session_id TEXT DEFAULT NULL`);
-  } catch (e) {
-    // Column might already exist
-  }
+  } catch (e) {}
+  
+  try {
+    db.exec(`ALTER TABLE access_codes ADD COLUMN expires_at DATETIME DEFAULT NULL`);
+  } catch (e) {}
 
   // API Routes
   const adminMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -51,8 +54,9 @@ async function startServer() {
   app.post("/api/admin/generate-code", adminMiddleware, (req, res) => {
     try {
       const count = req.body.count || 1;
+      const expiresInDays = req.body.expiresInDays || null;
       const codes: string[] = [];
-      const stmt = db.prepare("INSERT INTO access_codes (code) VALUES (?)");
+      const stmt = db.prepare("INSERT INTO access_codes (code, expires_at) VALUES (?, ?)");
       
       const generateSingleCode = () => {
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -76,9 +80,16 @@ async function startServer() {
         return code;
       };
 
+      let expiresAtValue = null;
+      if (expiresInDays) {
+        const d = new Date();
+        d.setDate(d.getDate() + parseInt(expiresInDays));
+        expiresAtValue = d.toISOString().replace('T', ' ').substring(0, 19);
+      }
+
       const insertMany = db.transaction((codesToInsert: string[]) => {
         for (const code of codesToInsert) {
-          stmt.run(code);
+          stmt.run(code, expiresAtValue);
         }
       });
 
@@ -105,6 +116,17 @@ async function startServer() {
     }
   });
   
+  app.post("/api/admin/reset-device", adminMiddleware, (req, res) => {
+    try {
+      const { code } = req.body;
+      if (!code) return res.status(400).json({ error: "Code is required" });
+      db.prepare("UPDATE access_codes SET session_id = NULL WHERE code = ?").run(code);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reset device" });
+    }
+  });
+
   app.post("/api/admin/deactivate-code", adminMiddleware, (req, res) => {
     try {
       const { code } = req.body;
@@ -147,6 +169,14 @@ async function startServer() {
       
       if (row.is_active === 0) {
         return res.status(401).json({ error: "Kode akses sudah tidak aktif" });
+      }
+
+      if (row.expires_at) {
+        const now = new Date();
+        const expiresAt = new Date(row.expires_at.replace(' ', 'T') + 'Z');
+        if (now > expiresAt) {
+          return res.status(401).json({ error: "Masa berlaku kode akses telah habis" });
+        }
       }
       
       let finalSessionId = row.session_id;

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, Plus, PowerOff, Loader2, KeyRound, AlertCircle, LogOut, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ShieldCheck, Plus, PowerOff, Loader2, KeyRound, AlertCircle, LogOut, Trash2, ChevronLeft, ChevronRight, MonitorX } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface AccessCode {
@@ -7,6 +7,8 @@ interface AccessCode {
   code: string;
   is_active: number;
   created_at: string;
+  expires_at: string | null;
+  session_id: string | null;
 }
 
 export default function AdminScreen() {
@@ -18,6 +20,7 @@ export default function AdminScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
+  const [expiresInDays, setExpiresInDays] = useState('30');
   
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 25;
@@ -76,7 +79,7 @@ export default function AdminScreen() {
           'Content-Type': 'application/json',
           'x-admin-code': 'pejuangunhan2027'
         },
-        body: JSON.stringify({ count })
+        body: JSON.stringify({ count, expiresInDays: expiresInDays ? parseInt(expiresInDays) : null })
       });
       if (res.ok) {
         fetchCodes();
@@ -87,6 +90,24 @@ export default function AdminScreen() {
       setError('Terjadi kesalahan');
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleResetDevice = async (code: string) => {
+    try {
+      const res = await fetch('/api/admin/reset-device', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-admin-code': 'pejuangunhan2027'
+        },
+        body: JSON.stringify({ code })
+      });
+      if (res.ok) {
+        fetchCodes();
+      }
+    } catch (err) {
+      console.error('Gagal reset device', err);
     }
   };
 
@@ -194,6 +215,19 @@ export default function AdminScreen() {
             <p className="text-slate-500 mt-1">Manajemen kode akses BMU</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 mr-2">
+              <label className="text-sm text-slate-600 font-medium">Masa Berlaku:</label>
+              <select 
+                value={expiresInDays}
+                onChange={(e) => setExpiresInDays(e.target.value)}
+                className="bg-white border border-slate-200 text-slate-700 text-sm rounded-lg px-2 py-1.5 outline-none focus:border-blue-500"
+              >
+                <option value="1">1 Hari</option>
+                <option value="7">7 Hari</option>
+                <option value="30">30 Hari</option>
+                <option value="">Selamanya</option>
+              </select>
+            </div>
             <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
               <button 
                 onClick={() => handleGenerate(1)}
@@ -241,8 +275,8 @@ export default function AdminScreen() {
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
                 <tr>
                   <th className="px-6 py-4">Kode Akses</th>
-                  <th className="px-6 py-4">Dibuat Pada</th>
-                  <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4">Dibuat / Berlaku</th>
+                  <th className="px-6 py-4">Status / Device</th>
                   <th className="px-6 py-4 text-right">Aksi</th>
                 </tr>
               </thead>
@@ -265,22 +299,49 @@ export default function AdminScreen() {
                       <td className="px-6 py-4 font-mono font-bold text-blue-900 tracking-wider text-base">
                         {c.code}
                       </td>
-                      <td className="px-6 py-4 text-slate-500">
-                        {new Date(c.created_at.replace(' ', 'T') + 'Z').toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
+                      <td className="px-6 py-4 text-slate-500 text-sm">
+                        <div className="flex flex-col gap-1">
+                          <span>Dibuat: {new Date(c.created_at.replace(' ', 'T') + 'Z').toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</span>
+                          {c.expires_at && (
+                            <span className={new Date() > new Date(c.expires_at.replace(' ', 'T') + 'Z') ? "text-red-500 font-medium" : "text-amber-600 font-medium"}>
+                              Exp: {new Date(c.expires_at.replace(' ', 'T') + 'Z').toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
-                        {c.is_active ? (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                            Aktif
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
-                            Nonaktif
-                          </span>
-                        )}
+                        <div className="flex flex-col items-start gap-2">
+                          {c.is_active ? (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                              Aktif
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
+                              Nonaktif
+                            </span>
+                          )}
+                          {c.session_id ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 border border-blue-100 text-blue-600">
+                              Terpakai (1 Device)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-50 border border-slate-100 text-slate-400">
+                              Belum Terpakai
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          {c.session_id && (
+                            <button 
+                              onClick={() => handleResetDevice(c.code)}
+                              className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 p-2 rounded-lg transition-colors inline-flex items-center gap-1"
+                              title="Reset Device"
+                            >
+                              <MonitorX className="w-4 h-4" />
+                            </button>
+                          )}
                           {c.is_active ? (
                             <button 
                               onClick={() => handleDeactivate(c.code)}
@@ -290,7 +351,7 @@ export default function AdminScreen() {
                               <PowerOff className="w-4 h-4" />
                             </button>
                           ) : (
-                            <span className="text-slate-300 w-8">-</span>
+                            <span className="text-slate-300 w-8 inline-block text-center">-</span>
                           )}
                           <button 
                             onClick={() => handleDelete(c.code)}
@@ -324,22 +385,43 @@ export default function AdminScreen() {
                     <span className="font-mono font-bold text-blue-900 tracking-wider text-base">
                       {c.code}
                     </span>
-                    {c.is_active ? (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                        Aktif
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
-                        Nonaktif
-                      </span>
-                    )}
+                    <div className="flex gap-2">
+                      {c.session_id && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700" title="Device Terikat">
+                          1 Device
+                        </span>
+                      )}
+                      {c.is_active ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                          Aktif
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
+                          Nonaktif
+                        </span>
+                      )}
+                    </div>
                   </div>
                   
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-500">
-                      {new Date(c.created_at.replace(' ', 'T') + 'Z').toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
-                    </span>
+                  <div className="flex items-end justify-between text-sm">
+                    <div className="flex flex-col gap-1 text-slate-500 text-xs">
+                      <span>{new Date(c.created_at.replace(' ', 'T') + 'Z').toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</span>
+                      {c.expires_at && (
+                        <span className={new Date() > new Date(c.expires_at.replace(' ', 'T') + 'Z') ? "text-red-500 font-medium" : "text-amber-600 font-medium"}>
+                          Exp: {new Date(c.expires_at.replace(' ', 'T') + 'Z').toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2">
+                      {c.session_id && (
+                        <button 
+                          onClick={() => handleResetDevice(c.code)}
+                          className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 p-2 rounded-lg transition-colors flex items-center justify-center w-8 h-8"
+                          title="Reset Device"
+                        >
+                          <MonitorX className="w-4 h-4" />
+                        </button>
+                      )}
                       {c.is_active ? (
                         <button 
                           onClick={() => handleDeactivate(c.code)}
