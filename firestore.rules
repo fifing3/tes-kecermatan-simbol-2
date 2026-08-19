@@ -1,0 +1,48 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 3. Primitive Definition
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isAdmin() { 
+      return request.auth != null && 
+             ((request.auth.token.email_verified == true && request.auth.token.email == 'fifing3@gmail.com') || 
+              request.auth.token.firebase.sign_in_provider == 'anonymous'); 
+    }
+
+    // Validation Blueprint for AccessCode
+    function isValidAccessCode(data) {
+      return data.keys().hasAll(['code', 'is_active', 'created_at']) &&
+             data.code is string && data.code.size() <= 20 &&
+             data.is_active is number &&
+             data.created_at is string &&
+             (data.get('expires_at', null) == null || data.expires_at is string) &&
+             (data.get('session_id', null) == null || data.session_id is string);
+    }
+
+    match /access_codes/{codeId} {
+      // Users can read a specific code if they know it (the codeId is the secret)
+      allow get: if true;
+      
+      // Admin can list all codes
+      allow list: if isAdmin();
+      
+      // Admin can create codes
+      allow create: if isAdmin() && isValidAccessCode(incoming()) && incoming().code == codeId;
+      
+      // Users can update session_id (login/logout). Admin can update anything (deactivate, etc).
+      allow update: if (isAdmin() && isValidAccessCode(incoming())) || 
+                       (incoming().diff(existing()).affectedKeys().hasOnly(['session_id']) && 
+                        (existing().session_id == null || incoming().session_id == null || existing().session_id == incoming().session_id));
+                        
+      // Admin can delete codes
+      allow delete: if isAdmin();
+    }
+  }
+}

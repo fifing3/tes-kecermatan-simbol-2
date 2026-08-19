@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { KeyRound, AlertCircle, Loader2, MessageCircle } from 'lucide-react';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { db } from './firebase';
 
 export default function LoginScreen() {
   const [code, setCode] = useState('');
@@ -19,25 +21,53 @@ export default function LoginScreen() {
     setError('');
 
     try {
-      const sessionId = localStorage.getItem('sessionId');
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: code.toUpperCase(), sessionId })
-      });
-      
-      const data = await res.json();
-      
-      if (res.ok) {
-        if (data.sessionId) {
-          localStorage.setItem('sessionId', data.sessionId);
-        }
-        sessionStorage.setItem('accessCode', code.toUpperCase());
-        navigate('/app');
-      } else {
-        setError(data.error || 'Login gagal');
+      const dbCode = code.toUpperCase();
+      const codeRef = doc(db, 'access_codes', dbCode);
+      const codeSnap = await getDoc(codeRef);
+
+      if (!codeSnap.exists()) {
+        setError('Kode akses tidak valid');
+        setIsLoading(false);
+        return;
       }
-    } catch (err) {
+
+      const row = codeSnap.data();
+
+      if (row.is_active === 0) {
+        setError('Kode akses sudah tidak aktif');
+        setIsLoading(false);
+        return;
+      }
+
+      if (row.expires_at) {
+        const now = new Date();
+        const expiresAt = new Date(row.expires_at.replace(' ', 'T') + 'Z');
+        if (now > expiresAt) {
+          setError('Masa berlaku kode akses telah habis');
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      let finalSessionId = row.session_id;
+      const currentSessionId = localStorage.getItem('sessionId');
+
+      if (finalSessionId) {
+        if (finalSessionId !== currentSessionId) {
+          setError('Kode akses sedang digunakan di perangkat lain');
+          setIsLoading(false);
+          return;
+        }
+      } else {
+        finalSessionId = crypto.randomUUID();
+        await updateDoc(codeRef, { session_id: finalSessionId });
+      }
+
+      localStorage.setItem('sessionId', finalSessionId);
+      sessionStorage.setItem('accessCode', dbCode);
+      navigate('/app');
+    } catch (err: any) {
+      console.error(err);
       setError('Terjadi kesalahan jaringan');
     } finally {
       setIsLoading(false);

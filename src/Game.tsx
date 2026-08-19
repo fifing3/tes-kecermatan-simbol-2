@@ -6,6 +6,8 @@ import { generateQuestion } from './utils';
 import { TestConfig, Question, AnswerResult } from './types';
 import { useNavigate } from 'react-router-dom';
 import { LogOut } from 'lucide-react';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { db } from './firebase';
 
 export default function Game() {
   const navigate = useNavigate();
@@ -40,11 +42,11 @@ export default function Game() {
     
     if (code && sessionId) {
       try {
-        await fetch('/api/logout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code, sessionId })
-        });
+        const codeRef = doc(db, 'access_codes', code);
+        const codeSnap = await getDoc(codeRef);
+        if (codeSnap.exists() && codeSnap.data().session_id === sessionId) {
+          await updateDoc(codeRef, { session_id: null });
+        }
       } catch (err) {
         console.error('Failed to logout on server', err);
       }
